@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>B64 → IMG</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0a0a0a;
+      --surface: #111111;
+      --border: #222222;
+      --accent: #e8ff47;
+      --accent2: #ff4747;
+      --text: #f0f0f0;
+      --muted: #555555;
+      --font-mono: 'Space Mono', monospace;
+      --font-body: 'DM Sans', sans-serif;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-body);
+      font-size: 15px;
+      line-height: 1.6;
+    }
+
+    /* Grain overlay */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+      background-repeat: repeat;
+      pointer-events: none;
+      z-index: 9999;
+      opacity: 0.4;
+    }
+
+    .layout {
+      min-height: 100vh;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      max-width: 820px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    /* Header */
+    header {
+      padding: 40px 0 32px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: baseline;
+      gap: 16px;
+    }
+
+    header h1 {
+      font-family: var(--font-mono);
+      font-size: 1.1rem;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    header h1 span {
+      color: var(--accent);
+    }
+
+    header p {
+      font-size: 0.82rem;
+      color: var(--muted);
+      font-family: var(--font-mono);
+    }
+
+    /* Main */
+    main {
+      padding: 40px 0;
+      display: flex;
+      flex-direction: column;
+      gap: 28px;
+    }
+
+    /* Input area */
+    .input-block label {
+      display: block;
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--muted);
+      margin-bottom: 10px;
+    }
+
+    .input-row {
+      display: flex;
+      gap: 10px;
+    }
+
+    textarea {
+      flex: 1;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      padding: 14px 16px;
+      resize: vertical;
+      min-height: 90px;
+      outline: none;
+      border-radius: 4px;
+      transition: border-color 0.15s;
+      line-height: 1.5;
+    }
+
+    textarea:focus {
+      border-color: var(--accent);
+    }
+
+    textarea::placeholder { color: var(--muted); }
+
+    .btn-decode {
+      background: var(--accent);
+      color: #0a0a0a;
+      border: none;
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      padding: 14px 22px;
+      cursor: pointer;
+      border-radius: 4px;
+      align-self: stretch;
+      min-width: 96px;
+      transition: background 0.12s, transform 0.1s;
+    }
+
+    .btn-decode:hover { background: #d4e83f; }
+    .btn-decode:active { transform: scale(0.97); }
+
+    /* Error */
+    .error-msg {
+      display: none;
+      background: #1a0a0a;
+      border: 1px solid var(--accent2);
+      border-left: 3px solid var(--accent2);
+      color: var(--accent2);
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      padding: 12px 16px;
+      border-radius: 4px;
+      animation: fadeIn 0.2s ease;
+    }
+
+    .error-msg.visible { display: block; }
+
+    /* Output */
+    .output {
+      display: none;
+      gap: 32px;
+    }
+
+    .output.visible {
+      display: grid;
+      grid-template-columns: 400px 1fr;
+      animation: fadeIn 0.3s ease;
+    }
+
+    @media (max-width: 700px) {
+      .output.visible {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .img-frame {
+      position: relative;
+    }
+
+    .img-frame::before {
+      content: '';
+      position: absolute;
+      inset: -1px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      pointer-events: none;
+    }
+
+    .img-frame canvas {
+      display: block;
+      width: 400px;
+      height: 400px;
+      border-radius: 3px;
+    }
+
+    @media (max-width: 700px) {
+      .img-frame canvas {
+        width: 100%;
+        height: auto;
+      }
+    }
+
+    .badge {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      padding: 4px 9px;
+      border-radius: 3px;
+      background: var(--accent);
+      color: #0a0a0a;
+    }
+
+    /* Info panel */
+    .info-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .info-section {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 16px 18px;
+    }
+
+    .info-section h3 {
+      font-family: var(--font-mono);
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--muted);
+      margin-bottom: 10px;
+    }
+
+    .meta-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.82rem;
+      padding: 5px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .meta-row:last-child { border-bottom: none; }
+    .meta-row .key { color: var(--muted); }
+    .meta-row .val { font-family: var(--font-mono); font-size: 0.78rem; }
+
+    .qr-result {
+      display: none;
+    }
+    .qr-result.visible { display: block; }
+
+    .qr-text {
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      word-break: break-all;
+      color: var(--accent);
+      line-height: 1.7;
+    }
+
+    .qr-link {
+      display: inline-block;
+      margin-top: 10px;
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      color: var(--accent);
+      text-decoration: underline;
+      text-underline-offset: 3px;
+    }
+
+    .no-qr {
+      font-size: 0.82rem;
+      color: var(--muted);
+    }
+
+    /* Download btn */
+    .btn-dl {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      padding: 9px 14px;
+      cursor: pointer;
+      border-radius: 4px;
+      margin-top: auto;
+      transition: border-color 0.15s, color 0.15s;
+      width: 100%;
+    }
+    .btn-dl:hover { border-color: var(--accent); color: var(--accent); }
+
+    /* Footer */
+    footer {
+      padding: 20px 0 28px;
+      border-top: 1px solid var(--border);
+      font-family: var(--font-mono);
+      font-size: 0.68rem;
+      color: var(--muted);
+      display: flex;
+      justify-content: space-between;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+</head>
+<body>
+<div class="layout">
+
+  <header>
+    <h1>B64<span>→</span>IMG</h1>
+    <p>base64 decoder + qr reader</p>
+  </header>
+
+  <main>
+    <div class="input-block">
+      <label>Base64 String</label>
+      <div class="input-row">
+        <textarea id="b64input" placeholder="Paste a base64-encoded image string here… (with or without data URI prefix)"></textarea>
+        <button class="btn-decode" id="decodeBtn">Decode</button>
+      </div>
+    </div>
+
+    <div class="error-msg" id="errorMsg"></div>
+
+    <div class="output" id="output">
+      <div class="img-frame">
+        <canvas id="imgCanvas" width="400" height="400"></canvas>
+        <span class="badge" id="qrBadge" style="display:none">QR</span>
+      </div>
+
+      <div class="info-panel">
+        <div class="info-section">
+          <h3>Image Info</h3>
+          <div class="meta-row"><span class="key">Size</span><span class="val" id="metaSize">—</span></div>
+          <div class="meta-row"><span class="key">Original</span><span class="val" id="metaOrig">—</span></div>
+          <div class="meta-row"><span class="key">Type</span><span class="val" id="metaType">—</span></div>
+          <div class="meta-row"><span class="key">Base64 len</span><span class="val" id="metaLen">—</span></div>
+        </div>
+
+        <div class="info-section qr-result" id="qrSection">
+          <h3>QR Decoded Text</h3>
+          <div class="qr-text" id="qrText"></div>
+          <a class="qr-link" id="qrLink" href="#" target="_blank" rel="noopener" style="display:none">↗ Open URL</a>
+        </div>
+
+        <div class="info-section" id="noQrSection" style="display:none">
+          <h3>QR Detection</h3>
+          <p class="no-qr">No QR code detected in this image.</p>
+        </div>
+
+        <button class="btn-dl" id="dlBtn">↓ Download PNG</button>
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    <span>runs entirely in your browser — nothing is uploaded</span>
+    <span id="tsLabel"></span>
+  </footer>
+
+</div>
+
+<script>
+  document.getElementById('tsLabel').textContent = new Date().getFullYear();
+
+  const b64input = document.getElementById('b64input');
+  const decodeBtn = document.getElementById('decodeBtn');
+  const errorMsg  = document.getElementById('errorMsg');
+  const output    = document.getElementById('output');
+  const imgCanvas = document.getElementById('imgCanvas');
+  const qrBadge   = document.getElementById('qrBadge');
+  const metaSize  = document.getElementById('metaSize');
+  const metaOrig  = document.getElementById('metaOrig');
+  const metaType  = document.getElementById('metaType');
+  const metaLen   = document.getElementById('metaLen');
+  const qrSection = document.getElementById('qrSection');
+  const qrText    = document.getElementById('qrText');
+  const qrLink    = document.getElementById('qrLink');
+  const noQrSection = document.getElementById('noQrSection');
+  const dlBtn     = document.getElementById('dlBtn');
+
+  function showError(msg) {
+    errorMsg.textContent = msg;
+    errorMsg.classList.add('visible');
+    output.classList.remove('visible');
+  }
+
+  function hideError() {
+    errorMsg.classList.remove('visible');
+  }
+
+  function formatBytes(n) {
+    if (n < 1024) return n + ' B';
+    if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+    return (n / (1024 * 1024)).toFixed(2) + ' MB';
+  }
+
+  function isURL(str) {
+    try { return /^https?:\/\//i.test(str); } catch { return false; }
+  }
+
+  decodeBtn.addEventListener('click', decode);
+  b64input.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) decode();
+  });
+
+  function decode() {
+    hideError();
+    let raw = b64input.value.trim();
+    if (!raw) { showError('Please paste a base64 string first.'); return; }
+
+    // Strip data URI prefix if present
+    let mime = 'image/png';
+    let b64data = raw;
+    const dataMatch = raw.match(/^data:([^;]+);base64,(.+)$/s);
+    if (dataMatch) {
+      mime = dataMatch[1];
+      b64data = dataMatch[2];
+    }
+
+    // Validate base64
+    b64data = b64data.replace(/\s/g, '');
+    if (!/^[A-Za-z0-9+/]*={0,2}$/.test(b64data)) {
+      showError('Invalid base64 string. Make sure to paste valid base64 data.');
+      return;
+    }
+
+    const dataURL = `data:${mime};base64,${b64data}`;
+    const img = new Image();
+
+    img.onload = () => {
+      // Draw to 400x400 canvas (letterbox / fill)
+      const ctx = imgCanvas.getContext('2d');
+      const SIZE = 400;
+      imgCanvas.width = SIZE;
+      imgCanvas.height = SIZE;
+
+      // Draw with contain scaling
+      const scale = Math.min(SIZE / img.width, SIZE / img.height);
+      const sw = img.width * scale;
+      const sh = img.height * scale;
+      const sx = (SIZE - sw) / 2;
+      const sy = (SIZE - sh) / 2;
+
+      ctx.fillStyle = '#0a0a0a';
+      ctx.fillRect(0, 0, SIZE, SIZE);
+      ctx.drawImage(img, sx, sy, sw, sh);
+
+      // Metadata
+      const rawBytes = atob(b64data).length;
+      metaSize.textContent = `${SIZE} × ${SIZE} px (canvas)`;
+      metaOrig.textContent = `${img.width} × ${img.height} px`;
+      metaType.textContent = mime;
+      metaLen.textContent  = formatBytes(rawBytes);
+
+      // QR detection
+      const imageData = ctx.getImageData(0, 0, SIZE, SIZE);
+      const qr = jsQR(imageData.data, SIZE, SIZE, { inversionAttempts: 'dontInvert' });
+
+      if (qr) {
+        qrBadge.style.display = '';
+        qrSection.classList.add('visible');
+        noQrSection.style.display = 'none';
+        qrText.textContent = qr.data;
+        if (isURL(qr.data)) {
+          qrLink.href = qr.data;
+          qrLink.style.display = 'inline-block';
+        } else {
+          qrLink.style.display = 'none';
+        }
+      } else {
+        qrBadge.style.display = 'none';
+        qrSection.classList.remove('visible');
+        noQrSection.style.display = 'block';
+        qrLink.style.display = 'none';
+      }
+
+      output.classList.add('visible');
+    };
+
+    img.onerror = () => {
+      showError('Could not render image. The base64 data may not be a valid image format.');
+    };
+
+    img.src = dataURL;
+  }
+
+  dlBtn.addEventListener('click', () => {
+    const link = document.createElement('a');
+    link.download = 'decoded-image.png';
+    link.href = imgCanvas.toDataURL('image/png');
+    link.click();
+  });
+</script>
+</body>
+</html>
