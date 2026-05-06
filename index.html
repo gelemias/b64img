@@ -42,10 +42,6 @@
     .info-panel { display: flex; flex-direction: column; gap: 16px; }
     .info-section { background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 16px 18px; }
     .info-section h3 { font-family: var(--font-mono); font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.12em; color: var(--muted); margin-bottom: 10px; }
-    .meta-row { display: flex; justify-content: space-between; font-size: 0.82rem; padding: 5px 0; border-bottom: 1px solid var(--border); }
-    .meta-row:last-child { border-bottom: none; }
-    .meta-row .key { color: var(--muted); }
-    .meta-row .val { font-family: var(--font-mono); font-size: 0.78rem; }
     .qr-result { display: none; }
     .qr-result.visible { display: block; }
     .qr-text { font-family: var(--font-mono); font-size: 0.8rem; word-break: break-all; color: var(--accent); line-height: 1.7; }
@@ -78,13 +74,6 @@
         <span class="badge" id="qrBadge" style="display:none">QR</span>
       </div>
       <div class="info-panel">
-        <div class="info-section">
-          <h3>Image Info</h3>
-          <div class="meta-row"><span class="key">Size</span><span class="val" id="metaSize">—</span></div>
-          <div class="meta-row"><span class="key">Original</span><span class="val" id="metaOrig">—</span></div>
-          <div class="meta-row"><span class="key">Type</span><span class="val" id="metaType">—</span></div>
-          <div class="meta-row"><span class="key">Base64 len</span><span class="val" id="metaLen">—</span></div>
-        </div>
         <div class="info-section qr-result" id="qrSection">
           <h3>QR Decoded Text</h3>
           <div class="qr-text" id="qrText"></div>
@@ -10211,10 +10200,9 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
 </script>
 <script>
   document.getElementById('tsLabel').textContent = new Date().getFullYear();
-  const b64input=document.getElementById('b64input'),decodeBtn=document.getElementById('decodeBtn'),errorMsg=document.getElementById('errorMsg'),output=document.getElementById('output'),imgCanvas=document.getElementById('imgCanvas'),qrBadge=document.getElementById('qrBadge'),metaSize=document.getElementById('metaSize'),metaOrig=document.getElementById('metaOrig'),metaType=document.getElementById('metaType'),metaLen=document.getElementById('metaLen'),qrSection=document.getElementById('qrSection'),qrText=document.getElementById('qrText'),qrLink=document.getElementById('qrLink'),noQrSection=document.getElementById('noQrSection'),dlBtn=document.getElementById('dlBtn');
+  const b64input=document.getElementById('b64input'),decodeBtn=document.getElementById('decodeBtn'),errorMsg=document.getElementById('errorMsg'),output=document.getElementById('output'),imgCanvas=document.getElementById('imgCanvas'),qrBadge=document.getElementById('qrBadge'),qrSection=document.getElementById('qrSection'),qrText=document.getElementById('qrText'),qrLink=document.getElementById('qrLink'),noQrSection=document.getElementById('noQrSection'),dlBtn=document.getElementById('dlBtn');
   function showError(msg){errorMsg.textContent=msg;errorMsg.classList.add('visible');output.classList.remove('visible');}
   function hideError(){errorMsg.classList.remove('visible');}
-  function formatBytes(n){if(n<1024)return n+' B';if(n<1048576)return(n/1024).toFixed(1)+' KB';return(n/1048576).toFixed(2)+' MB';}
   function isURL(s){return/^https?:\/\//i.test(s);}
   decodeBtn.addEventListener('click',decode);
   b64input.addEventListener('keydown',e=>{if(e.key==='Enter'&&(e.ctrlKey||e.metaKey))decode();});
@@ -10230,18 +10218,25 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
     const dataURL='data:'+mime+';base64,'+b64data;
     const img=new Image();
     img.onload=()=>{
-      const ctx=imgCanvas.getContext('2d'),SIZE=400;
-      imgCanvas.width=SIZE;imgCanvas.height=SIZE;
-      const scale=Math.min(SIZE/img.width,SIZE/img.height);
-      const sw=img.width*scale,sh=img.height*scale,sx=(SIZE-sw)/2,sy=(SIZE-sh)/2;
-      ctx.fillStyle='#0a0a0a';ctx.fillRect(0,0,SIZE,SIZE);
-      ctx.drawImage(img,sx,sy,sw,sh);
-      metaSize.textContent=SIZE+'×'+SIZE+' px (canvas)';
-      metaOrig.textContent=img.width+'×'+img.height+' px';
-      metaType.textContent=mime;
-      metaLen.textContent=formatBytes(atob(b64data).length);
-      const id=ctx.getImageData(0,0,SIZE,SIZE);
-      const qr=jsQR(id.data,SIZE,SIZE,{inversionAttempts:'dontInvert'});
+      const SIZE=400;
+      const dpr=window.devicePixelRatio||1;
+      // Set canvas backing store to physical pixels, CSS size stays 400x400
+      imgCanvas.width=SIZE*dpr;
+      imgCanvas.height=SIZE*dpr;
+      imgCanvas.style.width=SIZE+'px';
+      imgCanvas.style.height=SIZE+'px';
+      const ctx=imgCanvas.getContext('2d');
+      ctx.scale(dpr,dpr);
+      ctx.imageSmoothingEnabled=false;
+      ctx.drawImage(img,0,0,SIZE,SIZE);
+      // Scan QR on the original image at native resolution for best accuracy
+      const offscreen=document.createElement('canvas');
+      offscreen.width=img.naturalWidth;offscreen.height=img.naturalHeight;
+      const octx=offscreen.getContext('2d');
+      octx.imageSmoothingEnabled=false;
+      octx.drawImage(img,0,0,img.naturalWidth,img.naturalHeight);
+      const id=octx.getImageData(0,0,img.naturalWidth,img.naturalHeight);
+      const qr=jsQR(id.data,img.naturalWidth,img.naturalHeight,{inversionAttempts:'attemptBoth'});
       if(qr){
         qrBadge.style.display='';qrSection.classList.add('visible');noQrSection.style.display='none';
         qrText.textContent=qr.data;
